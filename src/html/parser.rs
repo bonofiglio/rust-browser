@@ -4,6 +4,12 @@ const GREATER_THAN: u8 = 0x003E;
 const LESS_THAN: u8 = 0x003C;
 const WHITESPACE: u8 = 0x0020;
 const SLASH: u8 = 0x002F;
+const UPPER_CASE_A: u8 = 0x0041;
+const UPPER_CASE_Z: u8 = 0x005A;
+const LOWER_CASE_A: u8 = 0x0061;
+const LOWER_CASE_Z: u8 = 0x007A;
+const ZERO: u8 = 0x0030;
+const NINE: u8 = 0x0039;
 
 #[derive(Debug)]
 pub enum ParserError {
@@ -119,7 +125,7 @@ impl Parser {
             let current_char = self.current_char();
 
             match current_char {
-                0x0041..=0x005A | 0x0061..=0x007A | 0x0030..=0x0039 => {
+                UPPER_CASE_A..=UPPER_CASE_Z | LOWER_CASE_A..=LOWER_CASE_Z | ZERO..=NINE => {
                     tag_name.push(current_char);
                     self.position += 1;
                 }
