@@ -70,33 +70,6 @@ impl UnexpectedTokenError {
     }
 }
 
-struct CurrentElement {
-    finished: bool,
-    element: ElementNode,
-}
-
-impl CurrentElement {
-    fn create_empty_element() -> ElementNode {
-        ElementNode {
-            tag_name: "".to_owned(),
-            attributes: ElementAttributes::new(),
-            children: ElementChildren::new(),
-        }
-    }
-
-    pub fn new() -> CurrentElement {
-        CurrentElement {
-            finished: false,
-            element: CurrentElement::create_empty_element(),
-        }
-    }
-
-    pub fn reset(&mut self) {
-        self.element = CurrentElement::create_empty_element();
-        self.finished = false;
-    }
-}
-
 pub struct Parser {
     input: Vec<u8>,
     position: usize,
