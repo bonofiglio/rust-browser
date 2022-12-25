@@ -114,8 +114,15 @@ impl Parser {
         self.input[self.position]
     }
 
-    fn next_char(&self) -> u8 {
-        self.input[self.position + 1]
+    fn next_char(&self) -> Result<u8, ParserError> {
+        if self.position + 1 >= self.input.len() {
+            return Err(ParserError::Generic(GenericError::new(
+                self.position,
+                "index out of bounds",
+            )));
+        }
+
+        Ok(self.input[self.position + 1])
     }
 
     fn get_tag_name(&mut self) -> Result<String, ParserError> {
@@ -194,7 +201,7 @@ impl Parser {
         while !self.eof() {
             match self.current_char() {
                 LESS_THAN => {
-                    let next_character = self.next_char();
+                    let next_character = self.next_char()?;
 
                     if next_character == SLASH {
                         self.position += 1;
@@ -243,9 +250,11 @@ impl Parser {
         let current_char = self.current_char();
 
         if current_char != LESS_THAN {
-            return Ok(Node::Text(TextNode {
-                content: self.get_text_content()?,
-            }));
+            return Err(ParserError::UnexpectedToken(UnexpectedTokenError::new(
+                "<",
+                &(current_char as char).to_string(),
+                self.position,
+            )));
         }
 
         self.position += 1;
