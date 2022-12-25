@@ -190,7 +190,6 @@ impl Parser {
 
     fn get_element_content(&mut self, root: &ElementNode) -> Result<Vec<Node>, ParserError> {
         let mut nodes = Vec::<Node>::new();
-        let mut open_tags = 0;
 
         while !self.eof() {
             match self.current_char() {
@@ -198,62 +197,40 @@ impl Parser {
                     let next_character = self.next_char();
 
                     if next_character == SLASH {
-                        self.position += 2;
+                        self.position += 1;
                     }
+                    self.position += 1;
 
                     let tag_name = self.get_tag_name()?;
 
                     if next_character == SLASH {
-                        if open_tags == 0 {
-                            if tag_name != root.tag_name {
-                                return Err(ParserError::UnexpectedToken(
-                                    UnexpectedTokenError::new(
-                                        &format!("</{}>", root.tag_name),
-                                        &(self.current_char() as char).to_string(),
-                                        self.position,
-                                    ),
-                                ));
-                            } else {
-                                return Ok(nodes);
-                            }
+                        if tag_name != root.tag_name {
+                            return Err(ParserError::UnexpectedToken(UnexpectedTokenError::new(
+                                &format!("</{}>", root.tag_name),
+                                &(self.current_char() as char).to_string(),
+                                self.position,
+                            )));
+                        } else {
+                            return Ok(nodes);
                         }
-
-                        open_tags -= 1;
-                    } else {
-                        open_tags += 1;
                     }
 
-                    nodes.push(Node::Element(ElementNode {
+                    let mut node = ElementNode {
                         tag_name,
                         // todo
                         attributes: ElementAttributes::new(),
                         children: ElementChildren::new(),
-                    }));
+                    };
+
+                    node.children = self.get_element_content(&node)?;
+
+                    nodes.push(Node::Element(node));
                 }
                 WHITESPACE => self.skip_whitespaces(),
                 // Text content
-                _ => {
-                    let last_node = nodes.last_mut();
-
-                    match last_node {
-                        Some(last_node) => match last_node {
-                            Node::Text(_) => {
-                                return Err(ParserError::Generic(GenericError::new(
-                                    self.position,
-                                    "Text nodes cannot have children",
-                                )))
-                            }
-                            Node::Element(last_node) => {
-                                last_node.children.push(Node::Text(TextNode {
-                                    content: self.get_text_content()?.trim().to_owned(),
-                                }))
-                            }
-                        },
-                        None => nodes.push(Node::Text(TextNode {
-                            content: self.get_text_content()?.trim().to_owned(),
-                        })),
-                    }
-                }
+                _ => nodes.push(Node::Text(TextNode {
+                    content: self.get_text_content()?.trim().to_owned(),
+                })),
             }
         }
 
