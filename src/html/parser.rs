@@ -4,18 +4,49 @@ const GREATER_THAN: u8 = 0x003E;
 const LESS_THAN: u8 = 0x003C;
 const WHITESPACE: u8 = 0x0020;
 const SLASH: u8 = 0x002F;
-const UPPER_CASE_A: u8 = 0x0041;
-const UPPER_CASE_Z: u8 = 0x005A;
-const LOWER_CASE_A: u8 = 0x0061;
-const LOWER_CASE_Z: u8 = 0x007A;
-const ZERO: u8 = 0x0030;
-const NINE: u8 = 0x0039;
+const QUOTE: u8 = 0x0022;
 
 #[derive(Debug)]
 pub enum ParserError {
     UnexpectedToken(UnexpectedTokenError),
     PrematureEndOfFile(PrematureEndOfFileError),
     Generic(GenericError),
+    InvalidIdentifier(InvalidIdentifierError),
+    InvalidAttributeValue(InvalidAttributeValueError),
+}
+
+#[derive(Debug)]
+pub struct InvalidAttributeValueError {
+    pub value: String,
+}
+
+impl InvalidAttributeValueError {
+    pub fn new(value: &str) -> InvalidAttributeValueError {
+        InvalidAttributeValueError {
+            value: InvalidAttributeValueError::build_error_message(value),
+        }
+    }
+
+    fn build_error_message(value: &str) -> String {
+        format!("Invalid attribute value \"{}\"", value)
+    }
+}
+
+#[derive(Debug)]
+pub struct InvalidIdentifierError {
+    pub identifier: String,
+}
+
+impl InvalidIdentifierError {
+    pub fn new(identifier: &str) -> InvalidIdentifierError {
+        InvalidIdentifierError {
+            identifier: InvalidIdentifierError::build_error_message(identifier),
+        }
+    }
+
+    fn build_error_message(identifier: &str) -> String {
+        format!("Invalid identifier \"{}\"", identifier)
+    }
 }
 
 #[derive(Debug)]
@@ -98,25 +129,80 @@ impl Parser {
         Ok(self.input[self.position + 1])
     }
 
-    fn get_tag_name(&mut self) -> Result<String, ParserError> {
-        let mut tag_name = Vec::<u8>::with_capacity(1);
+    fn validate_identifier(tag_name: &str) -> bool {
+        for char in tag_name.chars() {
+            if !char.is_alphanumeric() {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    fn validate_attribute_value(value: &str) -> bool {
+        let chars = value.as_bytes();
+
+        if chars[0] != QUOTE || chars[value.len() - 1] != QUOTE {
+            return false;
+        }
+
+        true
+    }
+
+    fn strip_attribute_value_quotes(value: &str) -> String {
+        let chars = value.as_bytes();
+
+        String::from_utf8(chars[1..chars.len() - 1].to_vec()).unwrap()
+    }
+
+    fn parse_attribute_section(section: &str) -> Result<(String, String), ParserError> {
+        match section.split_once("=") {
+            Some((key, value)) => {
+                if !Parser::validate_identifier(key) {
+                    return Err(ParserError::InvalidIdentifier(InvalidIdentifierError::new(
+                        key,
+                    )));
+                }
+
+                if !Parser::validate_attribute_value(value) {
+                    return Err(ParserError::InvalidAttributeValue(
+                        InvalidAttributeValueError::new(value),
+                    ));
+                }
+
+                return Ok((key.to_owned(), Parser::strip_attribute_value_quotes(value)));
+            }
+            None => {
+                return Ok((section.to_owned(), "".to_owned()));
+            }
+        }
+    }
+
+    fn parse_attributes(attributes_string: &str) -> Result<ElementAttributes, ParserError> {
+        let mut parsed_attributes = ElementAttributes::new();
+        let attribute_sections = attributes_string.split(" ");
+
+        for section in attribute_sections {
+            let (key, value) = Parser::parse_attribute_section(section)?;
+
+            if parsed_attributes.contains_key(&key) {
+                continue;
+            }
+
+            parsed_attributes.insert(key.to_owned(), value.to_owned());
+        }
+
+        Ok(parsed_attributes)
+    }
+
+    fn get_tag_data(&mut self) -> Result<(String, ElementAttributes), ParserError> {
+        let mut tag = String::new();
 
         while !self.eof() && self.current_char() != GREATER_THAN {
             let current_char = self.current_char();
 
-            match current_char {
-                UPPER_CASE_A..=UPPER_CASE_Z | LOWER_CASE_A..=LOWER_CASE_Z | ZERO..=NINE => {
-                    tag_name.push(current_char);
-                    self.position += 1;
-                }
-                _ => {
-                    return Err(ParserError::UnexpectedToken(UnexpectedTokenError::new(
-                        "tag name",
-                        &(current_char as char).to_string(),
-                        self.position,
-                    )))
-                }
-            }
+            tag.push(current_char as char);
+            self.position += 1;
         }
 
         // Reached eof before closing tag
@@ -128,7 +214,29 @@ impl Parser {
 
         self.position += 1;
 
-        Ok(String::from_utf8(tag_name).unwrap())
+        let split_tag = tag.split_once(" ");
+
+        match split_tag {
+            Some((tag_name, attributes_string)) => {
+                if !Parser::validate_identifier(&tag_name) {
+                    return Err(ParserError::InvalidIdentifier(InvalidIdentifierError::new(
+                        &tag,
+                    )));
+                }
+
+                let attributes = Parser::parse_attributes(attributes_string)?;
+
+                return Ok((tag_name.to_owned(), attributes));
+            }
+            None => {
+                if !Parser::validate_identifier(&tag) {
+                    return Err(ParserError::InvalidIdentifier(InvalidIdentifierError::new(
+                        &tag,
+                    )));
+                }
+                return Ok((tag, ElementAttributes::new()));
+            }
+        }
     }
 
     fn eof(&self) -> bool {
@@ -181,7 +289,7 @@ impl Parser {
                     }
                     self.position += 1;
 
-                    let tag_name = self.get_tag_name()?;
+                    let (tag_name, attributes) = self.get_tag_data()?;
 
                     if next_character == SLASH {
                         if tag_name != root.tag_name {
@@ -197,8 +305,7 @@ impl Parser {
 
                     let mut node = ElementNode {
                         tag_name,
-                        // todo
-                        attributes: ElementAttributes::new(),
+                        attributes,
                         children: ElementChildren::new(),
                     };
 
@@ -231,11 +338,11 @@ impl Parser {
         }
 
         self.position += 1;
-        let tag_name = self.get_tag_name()?;
+        let (tag_name, attributes) = self.get_tag_data()?;
 
         let mut root_node = ElementNode {
             tag_name,
-            attributes: ElementAttributes::new(),
+            attributes,
             children: ElementChildren::new(),
         };
 
